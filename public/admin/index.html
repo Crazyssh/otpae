@@ -80,6 +80,7 @@
   <button data-tab="stats">Statistics</button>
   <button data-tab="apikeys">API Keys</button>
   <button data-tab="orders">Orders</button>
+  <button data-tab="settings">Settings</button>
 </nav>
 
 <main>
@@ -194,6 +195,36 @@
       </table>
     </div>
   </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" class="hidden">
+    <div class="panel">
+      <h2>JasaOTP Settings</h2>
+      <p style="color:var(--muted); font-size:13px; margin:0 0 20px;">
+        API key untuk konek ke JasaOTP. Bisa diubah kapan aja, langsung berlaku tanpa perlu restart server.
+      </p>
+
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:13px; color:var(--muted); margin-bottom:6px;">JasaOTP API Key</label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="settingJasaKey" placeholder="Masukkan API key baru..." style="flex:1; padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'Fira Code', monospace; font-size:13px;" />
+          <button class="btn" id="saveSettingsBtn">Simpan</button>
+        </div>
+        <div id="currentKeyInfo" style="font-size:12px; color:var(--muted); margin-top:6px;"></div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:13px; color:var(--muted); margin-bottom:6px;">JasaOTP Base URL</label>
+        <input type="text" id="settingJasaUrl" style="width:100%; padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:'Fira Code', monospace; font-size:13px; box-sizing:border-box;" />
+        <div style="font-size:12px; color:var(--muted); margin-top:6px;">Default: https://api.jasaotp.id/v1</div>
+      </div>
+
+      <div style="display:flex; gap:8px; margin-top:24px; padding-top:20px; border-top:1px solid var(--border); align-items:center;">
+        <button class="btn secondary" id="testJasaBtn">🧪 Test Koneksi</button>
+        <span id="testResult" style="font-size:13px;"></span>
+      </div>
+    </div>
+  </section>
 </main>
 
 <!-- Modal: Create API Key -->
@@ -237,6 +268,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn => {
     if (btn.dataset.tab === 'orders') loadOrders();
     if (btn.dataset.tab === 'overview') loadOverview();
     if (btn.dataset.tab === 'stats') loadStats();
+    if (btn.dataset.tab === 'settings') loadSettings();
   });
 });
 
@@ -500,6 +532,50 @@ document.getElementById('repairOrdersBtn').addEventListener('click', async () =>
   const r = await api('/admin/api/orders/repair', { method: 'POST' });
   if (r) alert('Diperbaiki: ' + (r.fixed || 0) + ' order');
   loadOrders();
+});
+
+// === Settings ===
+async function loadSettings() {
+  const data = await api('/admin/api/settings');
+  if (!data) return;
+  document.getElementById('settingJasaKey').value = '';
+  document.getElementById('settingJasaKey').placeholder = data.jasaotp_api_key_set
+    ? 'Sudah di-set. Ketik di sini untuk ganti...'
+    : 'Belum di-set. Masukkan API key JasaOTP...';
+  document.getElementById('currentKeyInfo').textContent = data.jasaotp_api_key_set
+    ? `Saat ini: ${data.jasaotp_api_key}`
+    : '⚠️ Belum di-set. API tidak akan jalan sampai key dimasukkan.';
+  document.getElementById('settingJasaUrl').value = data.jasaotp_base_url || '';
+  document.getElementById('testResult').textContent = '';
+}
+
+document.getElementById('saveSettingsBtn').addEventListener('click', async () => {
+  const key = document.getElementById('settingJasaKey').value.trim();
+  const url = document.getElementById('settingJasaUrl').value.trim();
+  const body = {};
+  if (key) body.jasaotp_api_key = key;
+  if (url) body.jasaotp_base_url = url;
+  if (Object.keys(body).length === 0) return alert('Tidak ada perubahan');
+  const r = await api('/admin/api/settings', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.success) {
+    alert('Settings tersimpan. Berlaku langsung untuk request berikutnya.');
+    loadSettings();
+  }
+});
+
+document.getElementById('testJasaBtn').addEventListener('click', async () => {
+  const result = document.getElementById('testResult');
+  result.textContent = 'Testing...';
+  result.style.color = 'var(--muted)';
+  const r = await api('/admin/api/settings/test', { method: 'POST' });
+  if (!r) return;
+  if (r.success) {
+    result.textContent = `✅ ${r.message}. Saldo: Rp ${(r.saldo || 0).toLocaleString('id-ID')}`;
+    result.style.color = 'var(--green)';
+  } else {
+    result.textContent = `❌ ${r.message}`;
+    result.style.color = 'var(--red)';
+  }
 });
 
 // === Header actions ===

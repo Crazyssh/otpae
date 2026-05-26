@@ -9,14 +9,11 @@ const poller = require('./poller');
 const { generatePublicId } = require('./idgen');
 const { isValidOtp } = require('./otp-utils');
 const auth = require('./auth');
+const settings = require('./settings');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-if (!process.env.JASAOTP_API_KEY) {
-  console.error('[ERROR] JASAOTP_API_KEY belum diisi di file .env');
-  process.exit(1);
-}
 if (!process.env.ADMIN_PASSWORD) {
   console.error('[ERROR] ADMIN_PASSWORD belum diisi di file .env');
   process.exit(1);
@@ -251,6 +248,48 @@ app.post('/admin/api/sync', auth.requireAdmin, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ===== Settings (JasaOTP API key, dll) =====
+app.get('/admin/api/settings', auth.requireAdmin, (req, res) => {
+  const key = settings.getJasaOtpKey();
+  const baseUrl = settings.getJasaOtpBaseUrl();
+  // Mask key biar tidak full kelihatan
+  const masked = key
+    ? key.length > 10
+      ? key.slice(0, 6) + '*'.repeat(Math.max(4, key.length - 10)) + key.slice(-4)
+      : '****'
+    : '';
+  res.json({
+    jasaotp_api_key: masked,
+    jasaotp_api_key_set: !!key,
+    jasaotp_base_url: baseUrl,
+  });
+});
+
+app.post('/admin/api/settings', auth.requireAdmin, (req, res) => {
+  const { jasaotp_api_key, jasaotp_base_url } = req.body || {};
+  if (typeof jasaotp_api_key === 'string' && jasaotp_api_key.trim()) {
+    settings.set('jasaotp_api_key', jasaotp_api_key.trim());
+  }
+  if (typeof jasaotp_base_url === 'string' && jasaotp_base_url.trim()) {
+    settings.set('jasaotp_base_url', jasaotp_base_url.trim().replace(/\/+$/, ''));
+  }
+  res.json({ success: true });
+});
+
+// Test koneksi ke JasaOTP pake API key yang aktif
+app.post('/admin/api/settings/test', auth.requireAdmin, async (req, res) => {
+  try {
+    const result = await jasaotp.balance();
+    if (result?.success) {
+      res.json({ success: true, message: 'Koneksi OK', saldo: result.data?.saldo });
+    } else {
+      res.json({ success: false, message: result?.message || 'JasaOTP balas gagal' });
+    }
+  } catch (err) {
+    res.status(200).json({ success: false, message: err.response?.data?.message || err.message });
   }
 });
 

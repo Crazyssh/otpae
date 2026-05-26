@@ -75,6 +75,12 @@ db.exec(`
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 // Migrasi otomatis: tambah kolom api_key_id ke orders kalau belum ada
