@@ -222,7 +222,7 @@
   "data": { "otp": "Menunggu" }
 }</code></pre>
     <div class="alert info">
-      Response saat pending mengikuti format upstream JasaOTP — field <code>data.otp</code> berisi string <code>"Menunggu"</code>. Cek pakai validasi sederhana: <code>/^\d{3,10}$/.test(data.otp)</code> untuk membedakan OTP asli (3-10 digit angka) vs status pending.
+      Response saat pending mengikuti format upstream JasaOTP — field <code>data.otp</code> berisi string <code>"Menunggu"</code> (atau status lain saat order expired/cancelled di upstream). Cek pakai validasi sederhana: <code>/^\d{3,10}$/.test(data.otp)</code> untuk membedakan OTP asli (3-10 digit angka) vs status non-OTP.
     </div>
     <div class="alert warn">
       Jika polling, jeda minimal <strong>3 detik</strong> antar request untuk menghindari beban berlebih. Atau gunakan SSE di bawah.
