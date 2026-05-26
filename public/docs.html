@@ -45,107 +45,98 @@
     <div class="ver">v1 • REST API</div>
     <nav>
       <a href="#intro" class="section">Introduction</a>
-      <a href="#auth">Authentication</a>
+      <a href="#auth">Autentikasi</a>
       <a href="#base-url">Base URL</a>
-      <a href="#response">Response Format</a>
-      <a href="#flow">Flow Order</a>
+      <a href="#flow">Flow Pemakaian</a>
 
-      <a href="#data" class="section">Data Endpoint</a>
-      <a href="#balance">Saldo</a>
-      <a href="#negara">Negara</a>
+      <a href="#endpoints" class="section">Endpoints</a>
+      <a href="#balance">Periksa Saldo</a>
+      <a href="#negara">Daftar Negara</a>
       <a href="#operator">Operator</a>
       <a href="#layanan">Layanan</a>
+      <a href="#order">Buat Pesanan</a>
+      <a href="#sms">Periksa OTP</a>
+      <a href="#stream">SSE Stream</a>
+      <a href="#cancel">Batalkan Pesanan</a>
 
-      <a href="#order-section" class="section">Order Endpoint</a>
-      <a href="#order">Buat Order</a>
-      <a href="#sms">Cek OTP (Polling)</a>
-      <a href="#stream">SSE Stream (Real-time)</a>
-      <a href="#cancel">Cancel</a>
-
-      <a href="#history-section" class="section">History</a>
-      <a href="#orders-list">List Order</a>
-      <a href="#order-detail">Detail Order</a>
-
-      <a href="#status" class="section">Reference</a>
-      <a href="#status-order">Status Order</a>
-      <a href="#errors">Error Codes</a>
+      <a href="#errors" class="section">Error Codes</a>
     </nav>
   </aside>
 
   <main>
-    <h2 id="intro">API Documentation v1</h2>
-    <p>API untuk layanan OTP. RESTful, response JSON.</p>
+    <h2 id="intro">API Dokumentasi v1</h2>
+    <p>API mengikuti konvensi RESTful dan mengembalikan respons dalam format JSON. Endpoint dan response <strong>kompatibel dengan format JasaOTP</strong>, jadi web yang sudah dirancang untuk JasaOTP cukup mengganti base URL.</p>
 
-    <h3 id="auth">Authentication</h3>
-    <p>Semua endpoint <code>/v1/*</code> membutuhkan API key. Bisa dikirim lewat salah satu dari:</p>
+    <h3 id="auth">Autentikasi</h3>
+    <p>Semua permintaan API memerlukan parameter <code>api_key</code> untuk autentikasi. API key bisa didapat dari panel admin web ini.</p>
+    <p>API key bisa dikirim lewat salah satu cara berikut:</p>
     <ul>
       <li>Query parameter: <code>?api_key=sk_xxxxxxxx</code></li>
       <li>Header: <code>X-API-Key: sk_xxxxxxxx</code></li>
       <li>Header: <code>Authorization: Bearer sk_xxxxxxxx</code></li>
     </ul>
-    <div class="alert warn">⚠️ Jaga kerahasiaan API key. Gunakan hanya di sisi server, jangan di frontend yang publik.</div>
+    <div class="alert warn">⚠️ Jaga kerahasiaan API key. Jangan disimpan di kode frontend yang publik.</div>
 
     <h3 id="base-url">Base URL</h3>
+    <p>Semua permintaan dibuat ke URL dasar:</p>
 <pre><code>https://api.happypixel.net/v1/</code></pre>
-
-    <h3 id="response">Format Response</h3>
-    <p>Semua response konsisten dengan struktur:</p>
-<pre><code>{
-  "code": 200,
-  "success": true,
-  "message": "...",
-  "data": { ... }
-}</code></pre>
-    <p>Field <code>code</code> sama dengan HTTP status code. Field <code>success</code> hanya <code>true</code> bila operasi sukses.</p>
 
     <h3 id="flow">Flow Pemakaian</h3>
     <ol>
-      <li>Call <code>/v1/balance</code> untuk cek saldo</li>
-      <li>Call <code>/v1/negara</code>, <code>/v1/operator</code>, <code>/v1/layanan</code> untuk dapat list yang tersedia</li>
-      <li>Call <code>/v1/order</code> → dapat <code>order_id</code> + nomor HP</li>
+      <li>Cek saldo dengan <code>/v1/balance</code></li>
+      <li>Cek negara/operator/layanan yang tersedia (<code>/v1/negara</code>, <code>/v1/operator</code>, <code>/v1/layanan</code>)</li>
+      <li>Buat pesanan dengan <code>/v1/order</code> → dapat <code>order_id</code> + nomor HP</li>
       <li>Tunggu OTP dengan <strong>SSE</strong> (<code>/v1/sms/stream</code>) atau <strong>polling</strong> (<code>/v1/sms</code>)</li>
-      <li>Kalau gak masuk, <code>/v1/cancel</code> untuk refund</li>
+      <li>Kalau OTP tidak masuk, batalkan dengan <code>/v1/cancel</code> untuk refund</li>
     </ol>
     <div class="alert tip">
-      💡 Setelah <code>/v1/order</code> dipanggil, server <strong>otomatis polling</strong> ke upstream tiap beberapa detik. Anda cukup tunggu lewat SSE atau poll endpoint <code>/v1/sms</code> dengan jeda 3-5 detik. Polling berhenti otomatis kalau OTP masuk, atau kalau upstream JasaOTP melaporkan order sudah expired. OTP yang sudah masuk juga disimpan di database, jadi tidak akan hilang walau koneksi sempat putus.
+      💡 Setelah <code>/v1/order</code> dipanggil, server otomatis melakukan polling ke upstream di background. Jadi kalaupun web order sempat disconnect, OTP yang masuk tetap tersimpan di database. Polling berhenti otomatis ketika OTP diterima atau upstream melaporkan order expired.
     </div>
 
-    <!-- DATA ENDPOINTS -->
-    <h2 id="data">Data Endpoint</h2>
-    <p>Endpoint berikut membaca data dari cache lokal (di-sync dari upstream tiap jam). Cepat, hemat saldo.</p>
+    <!-- ENDPOINTS -->
+    <h2 id="endpoints">Endpoints</h2>
 
-    <h3 id="balance">Saldo</h3>
+    <h3 id="balance">Periksa Saldo</h3>
     <div class="endpoint"><span class="method get">GET</span>/v1/balance</div>
-    <p>Saldo akun upstream (di-update tiap 5 menit dan setelah operasi order/cancel).</p>
+    <p>Mengambil saldo akun saat ini.</p>
+    <table>
+      <tr><th>Parameter</th><th>Wajib</th><th>Tipe</th><th>Deskripsi</th></tr>
+      <tr><td><code>api_key</code></td><td>Ya</td><td>String</td><td>API Key Anda</td></tr>
+    </table>
+    <p><strong>Contoh Permintaan:</strong></p>
 <pre><code>GET /v1/balance?api_key=sk_xxxxxxxx</code></pre>
+    <p><strong>Respons:</strong></p>
 <pre><code>{
   "code": 200,
   "success": true,
-  "message": "Berhasil mengambil saldo dari cache.",
+  "message": "Berhasil memeriksa saldo.",
   "data": {
-    "saldo": 10000,
-    "updated_at": 1748000000000
+    "saldo": 10000
   }
 }</code></pre>
-    <p><code>updated_at</code> adalah Unix timestamp dalam <strong>milisecond</strong>.</p>
 
     <h3 id="negara">Daftar Negara</h3>
     <div class="endpoint"><span class="method get">GET</span>/v1/negara</div>
+    <p>Mengambil daftar negara yang tersedia.</p>
+<pre><code>GET /v1/negara?api_key=sk_xxxxxxxx</code></pre>
 <pre><code>{
   "code": 200,
   "success": true,
   "message": "Berhasil mengambil daftar negara.",
   "data": [
     { "id_negara": 0, "nama_negara": "rusia" },
+    { "id_negara": 1, "nama_negara": "ukraina" },
     { "id_negara": 6, "nama_negara": "indonesia" }
   ]
 }</code></pre>
 
     <h3 id="operator">Operator per Negara</h3>
     <div class="endpoint"><span class="method get">GET</span>/v1/operator</div>
+    <p>Mengambil daftar operator untuk negara tertentu.</p>
     <table>
       <tr><th>Parameter</th><th>Wajib</th><th>Tipe</th><th>Deskripsi</th></tr>
-      <tr><td><code>negara</code></td><td>Ya</td><td>Integer</td><td>ID negara</td></tr>
+      <tr><td><code>api_key</code></td><td>Ya</td><td>String</td><td>API Key Anda</td></tr>
+      <tr><td><code>negara</code></td><td>Ya</td><td>Integer</td><td>ID Negara</td></tr>
     </table>
 <pre><code>GET /v1/operator?negara=6&api_key=sk_xxxxxxxx</code></pre>
 <pre><code>{
@@ -153,68 +144,71 @@
   "success": true,
   "message": "Berhasil mendapatkan daftar operator.",
   "data": {
-    "6": ["any", "indosat", "telkomsel", "axis", "three", "smartfren", "byu"]
+    "6": [
+      "any", "indosat", "telkomsel", "axis",
+      "three", "smartfren", "byu"
+    ]
   }
 }</code></pre>
 
     <h3 id="layanan">Layanan per Negara</h3>
     <div class="endpoint"><span class="method get">GET</span>/v1/layanan</div>
+    <p>Mengambil daftar layanan yang tersedia untuk negara tertentu.</p>
     <table>
       <tr><th>Parameter</th><th>Wajib</th><th>Tipe</th><th>Deskripsi</th></tr>
-      <tr><td><code>negara</code></td><td>Ya</td><td>Integer</td><td>ID negara</td></tr>
+      <tr><td><code>api_key</code></td><td>Ya</td><td>String</td><td>API Key Anda</td></tr>
+      <tr><td><code>negara</code></td><td>Ya</td><td>Integer</td><td>ID Negara</td></tr>
     </table>
 <pre><code>GET /v1/layanan?negara=6&api_key=sk_xxxxxxxx</code></pre>
+    <p><strong>Respons</strong> (catatan: endpoint ini langsung mengembalikan map negara → layanan, tanpa wrapper):</p>
 <pre><code>{
-  "code": 200,
-  "success": true,
-  "message": "Berhasil mengambil layanan.",
-  "data": {
-    "6": {
-      "wa": { "harga": 3000, "stok": 999, "layanan": "whatsapp" },
-      "fb": { "harga": 4000, "stok": 999, "layanan": "facebook" }
-    }
+  "6": {
+    "wa": { "harga": 3000, "stok": 999, "layanan": "whatsapp" },
+    "fb": { "harga": 4000, "stok": 999, "layanan": "facebook" }
   }
 }</code></pre>
 
-    <!-- ORDER ENDPOINTS -->
-    <h2 id="order-section">Order Endpoint</h2>
-
-    <h3 id="order">Buat Order</h3>
+    <h3 id="order">Buat Pesanan</h3>
     <div class="endpoint"><span class="method get">GET</span>/v1/order</div>
+    <p>Membuat pesanan OTP baru.</p>
     <table>
       <tr><th>Parameter</th><th>Wajib</th><th>Tipe</th><th>Deskripsi</th></tr>
-      <tr><td><code>negara</code></td><td>Ya</td><td>Integer</td><td>ID negara (misal 6 untuk Indonesia)</td></tr>
-      <tr><td><code>layanan</code></td><td>Ya</td><td>String</td><td>Kode layanan (misal "wa")</td></tr>
-      <tr><td><code>operator</code></td><td>Ya</td><td>String</td><td>Nama operator (misal "any")</td></tr>
+      <tr><td><code>api_key</code></td><td>Ya</td><td>String</td><td>API Key Anda</td></tr>
+      <tr><td><code>negara</code></td><td>Ya</td><td>Integer</td><td>ID Negara (misal "6" untuk Indonesia)</td></tr>
+      <tr><td><code>layanan</code></td><td>Ya</td><td>String</td><td>Kode layanan (misal "wa" untuk WhatsApp)</td></tr>
+      <tr><td><code>operator</code></td><td>Ya</td><td>String</td><td>Nama operator (misal "any", "telkomsel")</td></tr>
     </table>
-<pre><code>GET /v1/order?negara=6&layanan=wa&operator=any&api_key=sk_xxxxxxxx</code></pre>
+<pre><code>GET /v1/order?api_key=sk_xxxxxxxx&negara=6&layanan=wa&operator=any</code></pre>
 <pre><code>{
   "code": 200,
   "success": true,
   "message": "Order berhasil.",
   "data": {
-    "order_id": "5849273011",
+    "order_id": "00000123",
     "number": "+6282272111384"
   }
 }</code></pre>
     <div class="alert info">
-      <code>order_id</code> bertipe <strong>string</strong> (10 digit angka acak). Simpan untuk dipakai di endpoint berikutnya.
+      <code>order_id</code> bertipe <strong>string 8 digit</strong> (sequential, dengan leading zero seperti <code>"00000001"</code>). Simpan untuk dipakai di endpoint berikutnya.
     </div>
 
-    <h3 id="sms">Cek OTP (Polling)</h3>
+    <h3 id="sms">Periksa OTP</h3>
     <div class="endpoint"><span class="method get">GET</span>/v1/sms</div>
+    <p>Mengambil OTP untuk pesanan.</p>
     <table>
       <tr><th>Parameter</th><th>Wajib</th><th>Tipe</th><th>Deskripsi</th></tr>
+      <tr><td><code>api_key</code></td><td>Ya</td><td>String</td><td>API Key Anda</td></tr>
       <tr><td><code>id</code></td><td>Ya</td><td>String</td><td>order_id dari /v1/order</td></tr>
     </table>
-    <p><strong>Saat OTP sudah masuk (HTTP 200):</strong></p>
+<pre><code>GET /v1/sms?api_key=sk_xxxxxxxx&id=00000123</code></pre>
+    <p><strong>Saat OTP sudah masuk:</strong></p>
 <pre><code>{
   "code": 200,
   "success": true,
   "message": "Berhasil mengambil OTP.",
   "data": { "otp": "123456" }
 }</code></pre>
-    <p><strong>Saat OTP belum masuk (HTTP 200):</strong></p>
+    <p><strong>Saat OTP belum masuk:</strong></p>
 <pre><code>{
   "code": 200,
   "success": true,
@@ -222,37 +216,37 @@
   "data": { "otp": "Menunggu" }
 }</code></pre>
     <div class="alert info">
-      Response saat pending mengikuti format upstream JasaOTP — field <code>data.otp</code> berisi string <code>"Menunggu"</code> (atau status lain saat order expired/cancelled di upstream). Cek pakai validasi sederhana: <code>/^\d{3,10}$/.test(data.otp)</code> untuk membedakan OTP asli (3-10 digit angka) vs status non-OTP.
+      Cara membedakan OTP asli dari status pending: validasi <code>data.otp</code> harus angka 3-10 digit, contoh: <code>/^\d{3,10}$/.test(data.otp)</code>. Jika cocok berarti OTP asli, jika tidak (<code>"Menunggu"</code>, <code>"Timeout"</code>, dll) berarti belum ada.
     </div>
     <div class="alert warn">
-      Jika polling, jeda minimal <strong>3 detik</strong> antar request untuk menghindari beban berlebih. Atau gunakan SSE di bawah.
+      Jika polling, beri jeda minimal <strong>3 detik</strong> antar request. Atau gunakan SSE untuk real-time tanpa polling.
     </div>
 
     <h3 id="stream">SSE Stream <span class="badge">real-time</span></h3>
     <div class="endpoint"><span class="method get">GET</span>/v1/sms/stream</div>
-    <p>Server-Sent Events. Buka 1 koneksi, terima OTP otomatis pas masuk. Lebih efisien dari polling.</p>
+    <p>Server-Sent Events. Buka 1 koneksi, terima OTP otomatis pas masuk. Lebih efisien dari polling — tidak perlu loop di sisi client.</p>
     <table>
       <tr><th>Parameter</th><th>Wajib</th><th>Tipe</th><th>Deskripsi</th></tr>
+      <tr><td><code>api_key</code></td><td>Ya</td><td>String</td><td>API Key Anda</td></tr>
       <tr><td><code>id</code></td><td>Ya</td><td>String</td><td>order_id</td></tr>
     </table>
     <p><strong>Contoh JavaScript:</strong></p>
-<pre><code>const url = '/v1/sms/stream?id=5849273011&api_key=sk_xxxxxxxx';
+<pre><code>const url = '/v1/sms/stream?id=00000123&api_key=sk_xxxxxxxx';
 const es = new EventSource(url);
 
 es.addEventListener('connected', e =&gt; {
-  // { order_id: "5849273011", status: "pending" }
+  // { order_id: "00000123", status: "pending" }
   console.log('Standby:', JSON.parse(e.data));
 });
 
 es.addEventListener('otp', e =&gt; {
-  // { type: "otp", public_id: "5849273011", otp: "123456" }
+  // { type: "otp", public_id: "00000123", otp: "123456" }
   const { otp } = JSON.parse(e.data);
   console.log('OTP masuk:', otp);
   es.close();
 });
 
 es.addEventListener('timeout', e =&gt; {
-  // { type: "timeout", public_id: "5849273011" }
   console.log('Order timeout / sudah expired di upstream');
   es.close();
 });</code></pre>
@@ -261,93 +255,38 @@ es.addEventListener('timeout', e =&gt; {
       <tr><th>Event</th><th>Kapan</th><th>Payload</th></tr>
       <tr><td><code>connected</code></td><td>Saat koneksi dibuka</td><td><code>{ order_id, status }</code></td></tr>
       <tr><td><code>otp</code></td><td>Saat OTP berhasil diterima (langsung tutup koneksi)</td><td><code>{ type, public_id, otp }</code></td></tr>
-      <tr><td><code>timeout</code></td><td>Setelah hard timeout (30 menit) atau upstream melaporkan order expired</td><td><code>{ type, public_id }</code></td></tr>
+      <tr><td><code>timeout</code></td><td>Saat upstream JasaOTP melaporkan order expired/cancelled</td><td><code>{ type, public_id }</code></td></tr>
     </table>
-    <p>Server juga mengirim heartbeat berupa comment (<code>: heartbeat</code>) tiap 15 detik untuk menjaga koneksi tetap hidup di balik proxy/CDN.</p>
+    <p>Server juga mengirim heartbeat berupa comment SSE (<code>: heartbeat</code>) tiap 15 detik untuk menjaga koneksi tetap hidup di balik proxy/CDN.</p>
 
-    <h3 id="cancel">Cancel Order</h3>
+    <h3 id="cancel">Batalkan Pesanan</h3>
     <div class="endpoint"><span class="method get">GET</span>/v1/cancel</div>
+    <p>Membatalkan pesanan yang ada dan mendapatkan pengembalian dana.</p>
     <table>
       <tr><th>Parameter</th><th>Wajib</th><th>Tipe</th><th>Deskripsi</th></tr>
+      <tr><td><code>api_key</code></td><td>Ya</td><td>String</td><td>API Key Anda</td></tr>
       <tr><td><code>id</code></td><td>Ya</td><td>String</td><td>order_id</td></tr>
     </table>
+<pre><code>GET /v1/cancel?api_key=sk_xxxxxxxx&id=00000123</code></pre>
 <pre><code>{
   "code": 200,
   "success": true,
   "message": "Pesanan berhasil dibatalkan dan saldo dikembalikan.",
   "data": {
-    "order_id": "5849273011",
+    "order_id": "00000123",
     "refunded_amount": 3000
   }
 }</code></pre>
-    <p>Cancel hanya berlaku untuk order yang masih <code>pending</code>. Order yang sudah <code>received</code> tidak bisa di-refund.</p>
+    <p>Cancel hanya berlaku untuk order yang masih <code>pending</code>. Order yang sudah menerima OTP tidak bisa di-refund.</p>
 
-    <!-- HISTORY -->
-    <h2 id="history-section">History</h2>
-
-    <h3 id="orders-list">List Order</h3>
-    <div class="endpoint"><span class="method get">GET</span>/v1/orders</div>
-    <p>Daftar order yang dibuat dengan API key Anda (urut terbaru di atas).</p>
-    <table>
-      <tr><th>Parameter</th><th>Wajib</th><th>Tipe</th><th>Deskripsi</th></tr>
-      <tr><td><code>limit</code></td><td>Tidak</td><td>Integer</td><td>Default 50, max 500</td></tr>
-    </table>
-<pre><code>{
-  "code": 200,
-  "success": true,
-  "data": [
-    {
-      "order_id": "5849273011",
-      "number": "+6282272111384",
-      "negara": 6,
-      "layanan": "wa",
-      "operator": "any",
-      "otp": "123456",
-      "status": "received",
-      "created_at": 1748000000000,
-      "updated_at": 1748000123456
-    }
-  ]
-}</code></pre>
-
-    <h3 id="order-detail">Detail Order</h3>
-    <div class="endpoint"><span class="method get">GET</span>/v1/orders/:id</div>
-<pre><code>GET /v1/orders/5849273011?api_key=sk_xxxxxxxx</code></pre>
-<pre><code>{
-  "code": 200,
-  "success": true,
-  "data": {
-    "order_id": "5849273011",
-    "number": "+6282272111384",
-    "negara": 6,
-    "layanan": "wa",
-    "operator": "any",
-    "otp": "123456",
-    "status": "received",
-    "created_at": 1748000000000,
-    "updated_at": 1748000123456
-  }
-}</code></pre>
-
-    <!-- REFERENCE -->
-    <h2 id="status">Reference</h2>
-
-    <h3 id="status-order">Status Order</h3>
-    <table>
-      <tr><th>Status</th><th>Deskripsi</th></tr>
-      <tr><td><code>pending</code></td><td>Sedang menunggu OTP masuk (server masih polling ke upstream)</td></tr>
-      <tr><td><code>received</code></td><td>OTP berhasil diterima dan tersimpan di field <code>otp</code></td></tr>
-      <tr><td><code>cancelled</code></td><td>Dibatalkan manual lewat /v1/cancel</td></tr>
-      <tr><td><code>timeout</code></td><td>OTP tidak masuk atau upstream JasaOTP melaporkan order expired/cancelled</td></tr>
-    </table>
-
-    <h3 id="errors">HTTP Status Codes</h3>
+    <!-- ERRORS -->
+    <h2 id="errors">Error Codes</h2>
     <table>
       <tr><th>Code</th><th>Arti</th></tr>
-      <tr><td>200</td><td>OK (sukses, atau pending dengan otp "Menunggu", atau cancelled/timeout)</td></tr>
+      <tr><td>200</td><td>OK (sukses, atau pending dengan <code>otp: "Menunggu"</code>)</td></tr>
       <tr><td>400</td><td>Parameter tidak lengkap atau tidak valid</td></tr>
       <tr><td>401</td><td>API key tidak dikirim atau tidak valid/dinonaktifkan</td></tr>
-      <tr><td>403</td><td>Order tidak dimiliki oleh API key Anda</td></tr>
+      <tr><td>403</td><td>Order ini bukan milik API key Anda</td></tr>
       <tr><td>404</td><td>Order atau resource tidak ditemukan</td></tr>
       <tr><td>500</td><td>Server error (upstream JasaOTP error/network)</td></tr>
     </table>
