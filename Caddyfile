@@ -1,9 +1,16 @@
-# Caddy auto-bikin SSL Let's Encrypt + redirect HTTP→HTTPS
-# Ganti "api.domainbang.com" sama domain bang.
+# Caddy listen di port 8080 (HTTP only).
+# SSL/HTTPS di-handle Cloudflare di depan.
+# Ganti "api.happypixel.net" sama domain bang.
 
-api.domainbang.com {
+{
+	# Matiin auto-HTTPS karena pake Cloudflare buat SSL
+	auto_https off
+	http_port 8080
+}
+
+http://api.happypixel.net:8080, http://:8080 {
 	reverse_proxy localhost:3999 {
-		# SSE support: jangan buffer, koneksi panjang
+		# SSE support: jangan buffer
 		flush_interval -1
 		transport http {
 			read_timeout 1h
@@ -14,8 +21,6 @@ api.domainbang.com {
 	encode gzip
 
 	header {
-		# Security headers
-		Strict-Transport-Security "max-age=31536000;"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer-when-downgrade"
