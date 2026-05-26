@@ -1,6 +1,7 @@
 const EventEmitter = require('events');
 const db = require('./db');
 const jasaotp = require('./jasaotp');
+const { isValidOtp } = require('./otp-utils');
 
 const emitter = new EventEmitter();
 emitter.setMaxListeners(0); // unlimited subscribers
@@ -39,17 +40,18 @@ function startPolling(publicId) {
       }
 
       const result = await jasaotp.sms(order.upstream_id);
+      const otp = result?.data?.otp;
 
-      if (result.success && result.data?.otp) {
-        const otp = result.data.otp;
+      if (result?.success && isValidOtp(otp)) {
         db.prepare(
           `UPDATE orders SET otp = ?, status = 'received', updated_at = ? WHERE public_id = ?`
-        ).run(otp, Date.now(), publicId);
+        ).run(String(otp).trim(), Date.now(), publicId);
 
-        emitter.emit(publicId, { type: 'otp', public_id: publicId, otp });
+        emitter.emit(publicId, { type: 'otp', public_id: publicId, otp: String(otp).trim() });
         stopPolling(publicId);
         console.log(`[POLLER] OTP diterima order ${publicId}: ${otp}`);
       }
+      // Selain itu (otp masih "Menunggu", null, atau format lain) → tetap pending
     } catch (err) {
       // Lanjut polling walau ada error sementara
       console.error(`[POLLER] Error polling ${publicId}:`, err.message);

@@ -7,6 +7,7 @@ const jasaotp = require('./jasaotp');
 const { syncAll, syncBalance } = require('./sync');
 const poller = require('./poller');
 const { generatePublicId } = require('./idgen');
+const { isValidOtp } = require('./otp-utils');
 const auth = require('./auth');
 
 const app = express();
@@ -253,6 +254,18 @@ app.post('/admin/api/sync', auth.requireAdmin, async (req, res) => {
   }
 });
 
+// Repair order yang status 'received' tapi OTP-nya bukan angka (bug lama)
+app.post('/admin/api/orders/repair', auth.requireAdmin, (req, res) => {
+  // Cari semua order received yang OTP-nya bukan digit murni
+  const bad = db.prepare(`SELECT public_id, otp FROM orders WHERE status = 'received'`).all()
+    .filter(r => !isValidOtp(r.otp));
+  for (const r of bad) {
+    db.prepare(`UPDATE orders SET status = 'pending', otp = NULL, updated_at = ? WHERE public_id = ?`).run(now(), r.public_id);
+    poller.startPolling(r.public_id);
+  }
+  res.json({ success: true, fixed: bad.length });
+});
+
 // === V1 PUBLIC API (require API key) ===
 
 const v1 = express.Router();
@@ -339,14 +352,16 @@ v1.get('/sms', async (req, res) => {
   poller.startPolling(id);
   try {
     const result = await jasaotp.sms(order.upstream_id);
-    if (result.success && result.data?.otp) {
-      db.prepare(`UPDATE orders SET otp = ?, status = 'received', updated_at = ? WHERE public_id = ?`).run(result.data.otp, now(), id);
+    const otp = result?.data?.otp;
+    if (result?.success && isValidOtp(otp)) {
+      const otpClean = String(otp).trim();
+      db.prepare(`UPDATE orders SET otp = ?, status = 'received', updated_at = ? WHERE public_id = ?`).run(otpClean, now(), id);
       poller.stopPolling(id);
-      return res.json({ code: 200, success: true, message: 'Berhasil mengambil OTP.', data: { otp: result.data.otp } });
+      return res.json({ code: 200, success: true, message: 'Berhasil mengambil OTP.', data: { otp: otpClean } });
     }
     return res.status(202).json({
       code: 202, success: false,
-      message: result.message || 'OTP belum diterima, masih menunggu',
+      message: result?.message || 'OTP belum diterima, masih menunggu',
       data: { status: order.status },
     });
   } catch (err) {

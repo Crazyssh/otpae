@@ -186,6 +186,7 @@
           <option value="timeout">Timeout</option>
         </select>
         <button class="btn secondary small" id="refreshOrdersBtn">Refresh</button>
+        <button class="btn secondary small" id="repairOrdersBtn" title="Reset order yang status 'received' tapi OTP-nya bukan angka">🔧 Repair Stuck Orders</button>
       </div>
       <table>
         <thead><tr><th>Order ID</th><th>Upstream</th><th>Number</th><th>Layanan</th><th>OTP</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
@@ -494,6 +495,12 @@ async function cancelOrder(id) {
 
 document.getElementById('refreshOrdersBtn').addEventListener('click', loadOrders);
 document.getElementById('filterStatus').addEventListener('change', loadOrders);
+document.getElementById('repairOrdersBtn').addEventListener('click', async () => {
+  if (!confirm('Reset order yang status received tapi OTP-nya bukan angka? Mereka akan kembali ke pending dan polling ulang.')) return;
+  const r = await api('/admin/api/orders/repair', { method: 'POST' });
+  if (r) alert('Diperbaiki: ' + (r.fixed || 0) + ' order');
+  loadOrders();
+});
 
 // === Header actions ===
 document.getElementById('syncBtn').addEventListener('click', async () => {
