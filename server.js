@@ -310,40 +310,80 @@ app.post('/admin/api/orders/repair', auth.requireAdmin, (req, res) => {
 const v1 = express.Router();
 v1.use(auth.requireApiKey);
 
-// Saldo (dari DB)
-v1.get('/balance', (req, res) => {
-  const row = db.prepare('SELECT saldo, updated_at FROM saldo WHERE id = 1').get();
-  if (!row) return res.status(404).json({ code: 404, success: false, message: 'Saldo belum disinkronkan' });
-  res.json({
-    code: 200, success: true,
-    message: 'Berhasil mengambil saldo dari cache.',
-    data: { saldo: row.saldo, updated_at: row.updated_at },
-  });
+// Saldo
+v1.get('/balance', async (req, res) => {
+  try {
+    const result = await jasaotp.balance();
+    return res.status(result.code || 200).json(result);
+  } catch (err) {
+    // Fallback ke cache DB kalau upstream error
+    const row = db.prepare('SELECT saldo FROM saldo WHERE id = 1').get();
+    if (row) {
+      return res.json({
+        code: 200,
+        success: true,
+        message: 'Berhasil memeriksa saldo.',
+        data: { saldo: row.saldo },
+      });
+    }
+    res.status(500).json({ code: 500, success: false, message: err.message });
+  }
 });
 
-v1.get('/negara', (req, res) => {
-  const rows = db.prepare('SELECT id_negara, nama_negara FROM negara ORDER BY id_negara').all();
-  res.json({ code: 200, success: true, message: 'Berhasil mengambil daftar negara.', data: rows });
+v1.get('/negara', async (req, res) => {
+  try {
+    const result = await jasaotp.negara();
+    return res.status(result.code || 200).json(result);
+  } catch (err) {
+    // Fallback ke cache
+    const rows = db.prepare('SELECT id_negara, nama_negara FROM negara ORDER BY id_negara').all();
+    if (rows.length > 0) {
+      return res.json({
+        code: 200, success: true,
+        message: 'Berhasil mengambil daftar negara.',
+        data: rows,
+      });
+    }
+    res.status(500).json({ code: 500, success: false, message: err.message });
+  }
 });
 
-v1.get('/operator', (req, res) => {
+v1.get('/operator', async (req, res) => {
   const { negara } = req.query;
   if (!negara) return res.status(400).json({ code: 400, success: false, message: 'Parameter negara wajib diisi' });
-  const rows = db.prepare('SELECT nama_operator FROM operator WHERE id_negara = ?').all(negara);
-  res.json({
-    code: 200, success: true,
-    message: 'Berhasil mendapatkan daftar operator.',
-    data: { [negara]: rows.map((r) => r.nama_operator) },
-  });
+  try {
+    const result = await jasaotp.operator(negara);
+    return res.status(result.code || 200).json(result);
+  } catch (err) {
+    const rows = db.prepare('SELECT nama_operator FROM operator WHERE id_negara = ?').all(negara);
+    if (rows.length > 0) {
+      return res.json({
+        code: 200, success: true,
+        message: 'Berhasil mendapatkan daftar operator.',
+        data: { [negara]: rows.map((r) => r.nama_operator) },
+      });
+    }
+    res.status(500).json({ code: 500, success: false, message: err.message });
+  }
 });
 
-v1.get('/layanan', (req, res) => {
+v1.get('/layanan', async (req, res) => {
   const { negara } = req.query;
   if (!negara) return res.status(400).json({ code: 400, success: false, message: 'Parameter negara wajib diisi' });
-  const rows = db.prepare('SELECT kode, nama_layanan, harga, stok FROM layanan WHERE id_negara = ?').all(negara);
-  const obj = {};
-  for (const r of rows) obj[r.kode] = { harga: r.harga, stok: r.stok, layanan: r.nama_layanan };
-  res.json({ code: 200, success: true, message: 'Berhasil mengambil layanan.', data: { [negara]: obj } });
+  try {
+    const result = await jasaotp.layanan(negara);
+    // JasaOTP balikin TANPA wrapper code/success/message untuk endpoint ini.
+    // Ikut format mereka apa adanya.
+    return res.status(200).json(result);
+  } catch (err) {
+    const rows = db.prepare('SELECT kode, nama_layanan, harga, stok FROM layanan WHERE id_negara = ?').all(negara);
+    if (rows.length > 0) {
+      const obj = {};
+      for (const r of rows) obj[r.kode] = { harga: r.harga, stok: r.stok, layanan: r.nama_layanan };
+      return res.json({ [negara]: obj });
+    }
+    res.status(500).json({ code: 500, success: false, message: err.message });
+  }
 });
 
 v1.get('/order', async (req, res) => {
@@ -373,6 +413,8 @@ v1.get('/order', async (req, res) => {
       data: { order_id: publicId, number },
     });
   } catch (err) {
+    // Coba forward error response upstream apa adanya
+    if (err.response?.data) return res.status(err.response.status || 500).json(err.response.data);
     res.status(500).json({ code: 500, success: false, message: err.message });
   }
 });
@@ -388,13 +430,6 @@ v1.get('/sms', async (req, res) => {
   if (order.otp) {
     return res.json({ code: 200, success: true, message: 'Berhasil mengambil OTP.', data: { otp: order.otp } });
   }
-  // Status terminal (cancelled/timeout) → balas info-nya, tapi tetap HTTP 200
-  if (order.status === 'cancelled') {
-    return res.json({ code: 200, success: false, message: 'Pesanan dibatalkan.', data: { otp: 'Dibatalkan', status: 'cancelled' } });
-  }
-  if (order.status === 'timeout') {
-    return res.json({ code: 200, success: false, message: 'Pesanan timeout, OTP tidak diterima.', data: { otp: 'Timeout', status: 'timeout' } });
-  }
   poller.startPolling(id);
   try {
     const result = await jasaotp.sms(order.upstream_id);
@@ -405,14 +440,10 @@ v1.get('/sms', async (req, res) => {
       poller.stopPolling(id);
       return res.json({ code: 200, success: true, message: 'Berhasil mengambil OTP.', data: { otp: otpClean } });
     }
-    // Pending → MIRROR JasaOTP format persis (code 200, success true, otp "Menunggu")
-    return res.json({
-      code: 200,
-      success: true,
-      message: result?.message || 'Masih menunggu kode OTP.',
-      data: { otp: 'Menunggu' },
-    });
+    // Selain itu (Menunggu, expired, dll), forward response JasaOTP apa adanya
+    return res.status(result?.code || 200).json(result);
   } catch (err) {
+    if (err.response?.data) return res.status(err.response.status || 500).json(err.response.data);
     res.status(500).json({ code: 500, success: false, message: err.message });
   }
 });
@@ -482,6 +513,7 @@ v1.get('/cancel', async (req, res) => {
     if (result.data?.order_id) result.data.order_id = id;
     res.status(result.code || 200).json(result);
   } catch (err) {
+    if (err.response?.data) return res.status(err.response.status || 500).json(err.response.data);
     res.status(500).json({ code: 500, success: false, message: err.message });
   }
 });
