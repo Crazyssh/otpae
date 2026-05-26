@@ -118,10 +118,29 @@ async function syncAll() {
   await syncBalance();
   const negaraList = await syncNegara();
 
-  for (const n of negaraList) {
-    await syncOperator(n.id_negara);
-    await syncLayanan(n.id_negara);
+  // Paralel dengan concurrency limit biar JasaOTP gak kena rate-limit
+  const CONCURRENCY = parseInt(process.env.SYNC_CONCURRENCY || '8');
+  console.log(`[INFO] Sync ${negaraList.length} negara paralel ${CONCURRENCY}x`);
+
+  const queue = [...negaraList];
+  let done = 0;
+
+  async function worker() {
+    while (queue.length > 0) {
+      const n = queue.shift();
+      if (!n) break;
+      await Promise.all([
+        syncOperator(n.id_negara),
+        syncLayanan(n.id_negara),
+      ]);
+      done++;
+      if (done % 10 === 0) console.log(`[PROGRESS] ${done}/${negaraList.length} negara selesai`);
+    }
   }
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, negaraList.length) }, () => worker());
+  await Promise.all(workers);
+
   logSync('all', true, `${negaraList.length} negara`);
   console.log('=== Sync selesai ===');
 }
