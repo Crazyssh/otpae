@@ -4,17 +4,37 @@ const jasaotp = require('./jasaotp');
 const { isValidOtp } = require('./otp-utils');
 
 const emitter = new EventEmitter();
-emitter.setMaxListeners(0); // unlimited subscribers
+emitter.setMaxListeners(0);
 
 const activePollers = new Map(); // public_id -> intervalId
 
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000');
-const POLL_TIMEOUT_MS = parseInt(process.env.POLL_TIMEOUT_MS || '1080000'); // 18 menit
+// Default 30 menit, lebih lama dari JasaOTP biar kita gak lebih dulu nyerah
+const POLL_TIMEOUT_MS = parseInt(process.env.POLL_TIMEOUT_MS || '1800000');
 
 /**
- * Mulai polling OTP ke JasaOTP buat order tertentu.
- * Otomatis stop kalau OTP udah masuk, error fatal, atau timeout.
+ * Cek apakah response JasaOTP nunjukin order udah expired/timeout di sana.
+ * Kalau iya, kita stop polling karena gak ada gunanya nunggu lagi.
  */
+function isUpstreamTerminal(result) {
+  if (!result) return false;
+  const msg = String(result.message || '').toLowerCase();
+  const otp = String(result?.data?.otp || '').toLowerCase();
+  // Tanda-tanda upstream udah berakhir
+  return (
+    msg.includes('expired') ||
+    msg.includes('kadaluarsa') ||
+    msg.includes('timeout') ||
+    msg.includes('habis') ||
+    msg.includes('dibatalkan') ||
+    msg.includes('tidak ditemukan') ||
+    otp.includes('timeout') ||
+    otp.includes('expired') ||
+    otp.includes('dibatalkan') ||
+    result.code === 404
+  );
+}
+
 function startPolling(publicId) {
   if (activePollers.has(publicId)) return;
 
@@ -22,20 +42,21 @@ function startPolling(publicId) {
     .prepare('SELECT upstream_id, status FROM orders WHERE public_id = ?')
     .get(publicId);
   if (!order) return;
-  if (order.status === 'received' || order.status === 'cancelled') return;
+  if (order.status === 'received' || order.status === 'cancelled' || order.status === 'timeout') return;
 
   const startedAt = Date.now();
-  console.log(`[POLLER] Mulai polling order ${publicId} (upstream=${order.upstream_id})`);
+  console.log(`[POLLER] Start polling ${publicId} (upstream=${order.upstream_id})`);
 
   const tick = async () => {
     try {
-      // Cek timeout
+      // Hard timeout safety: stop kalau lewat dari MAX biar gak ngepoll selamanya
       if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
         stopPolling(publicId);
         db.prepare(
           `UPDATE orders SET status = 'timeout', updated_at = ? WHERE public_id = ? AND status = 'pending'`
         ).run(Date.now(), publicId);
         emitter.emit(publicId, { type: 'timeout', public_id: publicId });
+        console.log(`[POLLER] Hard timeout ${publicId} setelah ${POLL_TIMEOUT_MS / 1000}s`);
         return;
       }
 
@@ -43,22 +64,33 @@ function startPolling(publicId) {
       const otp = result?.data?.otp;
 
       if (result?.success && isValidOtp(otp)) {
+        const otpClean = String(otp).trim();
         db.prepare(
           `UPDATE orders SET otp = ?, status = 'received', updated_at = ? WHERE public_id = ?`
-        ).run(String(otp).trim(), Date.now(), publicId);
+        ).run(otpClean, Date.now(), publicId);
 
-        emitter.emit(publicId, { type: 'otp', public_id: publicId, otp: String(otp).trim() });
+        emitter.emit(publicId, { type: 'otp', public_id: publicId, otp: otpClean });
         stopPolling(publicId);
-        console.log(`[POLLER] OTP diterima order ${publicId}: ${otp}`);
+        console.log(`[POLLER] OTP diterima ${publicId}: ${otpClean}`);
+        return;
       }
-      // Selain itu (otp masih "Menunggu", null, atau format lain) → tetap pending
+
+      // Kalau JasaOTP bilang udah expired/cancelled di sana, stop polling
+      if (isUpstreamTerminal(result)) {
+        stopPolling(publicId);
+        db.prepare(
+          `UPDATE orders SET status = 'timeout', updated_at = ? WHERE public_id = ? AND status = 'pending'`
+        ).run(Date.now(), publicId);
+        emitter.emit(publicId, { type: 'timeout', public_id: publicId });
+        console.log(`[POLLER] Upstream terminal ${publicId}: ${result?.message}`);
+        return;
+      }
+      // Selain itu (otp "Menunggu", null, dll) → tetap pending, lanjut polling
     } catch (err) {
-      // Lanjut polling walau ada error sementara
-      console.error(`[POLLER] Error polling ${publicId}:`, err.message);
+      console.error(`[POLLER] Error ${publicId}:`, err.message);
     }
   };
 
-  // Tick langsung sekali, lalu interval
   tick();
   const intervalId = setInterval(tick, POLL_INTERVAL_MS);
   activePollers.set(publicId, intervalId);
@@ -72,17 +104,11 @@ function stopPolling(publicId) {
   }
 }
 
-/**
- * Subscribe ke event order tertentu (buat SSE).
- */
 function subscribe(publicId, callback) {
   emitter.on(publicId, callback);
   return () => emitter.off(publicId, callback);
 }
 
-/**
- * Resume polling untuk semua order yg masih pending pas server restart.
- */
 function resumePending() {
   const pending = db
     .prepare(`SELECT public_id FROM orders WHERE status = 'pending'`)
