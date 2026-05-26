@@ -388,6 +388,13 @@ v1.get('/sms', async (req, res) => {
   if (order.otp) {
     return res.json({ code: 200, success: true, message: 'Berhasil mengambil OTP.', data: { otp: order.otp } });
   }
+  // Status terminal (cancelled/timeout) → balas info-nya, tapi tetap HTTP 200
+  if (order.status === 'cancelled') {
+    return res.json({ code: 200, success: false, message: 'Pesanan dibatalkan.', data: { otp: 'Dibatalkan', status: 'cancelled' } });
+  }
+  if (order.status === 'timeout') {
+    return res.json({ code: 200, success: false, message: 'Pesanan timeout, OTP tidak diterima.', data: { otp: 'Timeout', status: 'timeout' } });
+  }
   poller.startPolling(id);
   try {
     const result = await jasaotp.sms(order.upstream_id);
@@ -398,10 +405,12 @@ v1.get('/sms', async (req, res) => {
       poller.stopPolling(id);
       return res.json({ code: 200, success: true, message: 'Berhasil mengambil OTP.', data: { otp: otpClean } });
     }
-    return res.status(202).json({
-      code: 202, success: true,
-      message: result?.message || 'OTP belum diterima, masih menunggu',
-      data: { status: order.status, otp: null },
+    // Pending → MIRROR JasaOTP format persis (code 200, success true, otp "Menunggu")
+    return res.json({
+      code: 200,
+      success: true,
+      message: result?.message || 'Masih menunggu kode OTP.',
+      data: { otp: 'Menunggu' },
     });
   } catch (err) {
     res.status(500).json({ code: 500, success: false, message: err.message });

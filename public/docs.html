@@ -214,18 +214,15 @@
   "message": "Berhasil mengambil OTP.",
   "data": { "otp": "123456" }
 }</code></pre>
-    <p><strong>Saat OTP belum masuk (HTTP 202):</strong></p>
+    <p><strong>Saat OTP belum masuk (HTTP 200):</strong></p>
 <pre><code>{
-  "code": 202,
+  "code": 200,
   "success": true,
-  "message": "OTP belum diterima, masih menunggu",
-  "data": {
-    "status": "pending",
-    "otp": null
-  }
+  "message": "Masih menunggu kode OTP.",
+  "data": { "otp": "Menunggu" }
 }</code></pre>
     <div class="alert info">
-      <strong>HTTP 202 = Accepted, masih dalam proses</strong>. Bedakan dengan <code>200</code> (OTP sudah masuk) dan <code>400/401/403/404</code> (error). Kalau <code>code === 202</code>, polling lagi setelah jeda.
+      Response saat pending mengikuti format upstream JasaOTP — field <code>data.otp</code> berisi string <code>"Menunggu"</code>. Cek pakai validasi sederhana: <code>/^\d{3,10}$/.test(data.otp)</code> untuk membedakan OTP asli (3-10 digit angka) vs status pending.
     </div>
     <div class="alert warn">
       Jika polling, jeda minimal <strong>3 detik</strong> antar request untuk menghindari beban berlebih. Atau gunakan SSE di bawah.
@@ -347,8 +344,7 @@ es.addEventListener('timeout', e =&gt; {
     <h3 id="errors">HTTP Status Codes</h3>
     <table>
       <tr><th>Code</th><th>Arti</th></tr>
-      <tr><td>200</td><td>OK, operasi sukses</td></tr>
-      <tr><td>202</td><td>Accepted, OTP belum masuk (khusus <code>/v1/sms</code>)</td></tr>
+      <tr><td>200</td><td>OK (sukses, atau pending dengan otp "Menunggu", atau cancelled/timeout)</td></tr>
       <tr><td>400</td><td>Parameter tidak lengkap atau tidak valid</td></tr>
       <tr><td>401</td><td>API key tidak dikirim atau tidak valid/dinonaktifkan</td></tr>
       <tr><td>403</td><td>Order tidak dimiliki oleh API key Anda</td></tr>
