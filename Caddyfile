@@ -1,0 +1,30 @@
+# Caddy auto-bikin SSL Let's Encrypt + redirect HTTP→HTTPS
+# Ganti "api.domainbang.com" sama domain bang.
+
+api.domainbang.com {
+	reverse_proxy localhost:3999 {
+		# SSE support: jangan buffer, koneksi panjang
+		flush_interval -1
+		transport http {
+			read_timeout 1h
+			write_timeout 1h
+		}
+	}
+
+	encode gzip
+
+	header {
+		# Security headers
+		Strict-Transport-Security "max-age=31536000;"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer-when-downgrade"
+	}
+
+	log {
+		output file logs/access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+	}
+}
