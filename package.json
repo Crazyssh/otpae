@@ -1,0 +1,17 @@
+{
+  "name": "otp-proxy",
+  "version": "1.0.0",
+  "description": "Proxy API + Database untuk JasaOTP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "sync": "node sync.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "node-cron": "^3.0.3"
+  }
+}

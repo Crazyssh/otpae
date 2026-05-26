@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --border:#334155; --text:#e2e8f0; --muted:#94a3b8; --accent:#3b82f6; --green:#10b981; --orange:#f59e0b; --red:#ef4444; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--panel); border-bottom:1px solid var(--border); padding:16px 32px; display:flex; align-items:center; justify-content:space-between; }
+  header h1 { margin:0; font-size:18px; }
+  header .actions { display:flex; gap:12px; }
+  header a, header button { color:var(--muted); text-decoration:none; font-size:14px; background:none; border:none; cursor:pointer; padding:6px 12px; border-radius:6px; }
+  header a:hover, header button:hover { background:rgba(255,255,255,0.05); color:var(--text); }
+  nav.tabs { background:var(--panel); border-bottom:1px solid var(--border); padding:0 32px; display:flex; gap:4px; }
+  nav.tabs button { background:none; border:none; color:var(--muted); padding:14px 18px; cursor:pointer; font-size:14px; border-bottom:2px solid transparent; }
+  nav.tabs button.active { color:var(--text); border-bottom-color:var(--accent); }
+  main { padding:32px; max-width:1300px; margin:0 auto; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; }
+  .stat { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:20px; }
+  .stat .label { color:var(--muted); font-size:13px; }
+  .stat .value { font-size:28px; font-weight:700; margin-top:4px; }
+  .stat .sub { font-size:12px; color:var(--muted); margin-top:4px; }
+  .stat.accent { border-color:var(--accent); }
+  .stat.green { border-color:var(--green); }
+  .stat.orange { border-color:var(--orange); }
+  .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:24px; margin-bottom:24px; }
+  .panel h2 { margin:0 0 16px; font-size:16px; display:flex; justify-content:space-between; align-items:center; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns:1fr; } }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; }
+  td.mono { font-family:"Fira Code", Consolas, monospace; font-size:12px; }
+  td.right { text-align:right; }
+  .btn { padding:8px 14px; background:var(--accent); color:white; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; }
+  .btn:hover { background:#2563eb; }
+  .btn.secondary { background:var(--border); color:var(--text); }
+  .btn.danger { background:var(--red); }
+  .btn.small { padding:4px 10px; font-size:12px; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+  .badge.pending { background:rgba(245,158,11,0.2); color:#fbbf24; }
+  .badge.received { background:rgba(16,185,129,0.2); color:#34d399; }
+  .badge.cancelled { background:rgba(148,163,184,0.2); color:#94a3b8; }
+  .badge.timeout { background:rgba(239,68,68,0.2); color:#fca5a5; }
+  .badge.active { background:rgba(16,185,129,0.2); color:#34d399; }
+  .badge.inactive { background:rgba(148,163,184,0.2); color:#94a3b8; }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; z-index:100; }
+  .modal-bg.show { display:flex; }
+  .modal { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:24px; width:480px; max-width:90vw; }
+  .modal h3 { margin:0 0 16px; }
+  .modal input { width:100%; padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:14px; box-sizing:border-box; }
+  .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  .key-display { background:var(--bg); padding:12px; border-radius:6px; font-family:"Fira Code", Consolas, monospace; font-size:12px; word-break:break-all; margin-top:12px; }
+  .hidden { display:none; }
+  .empty { text-align:center; color:var(--muted); padding:32px; }
+  .filter-bar { display:flex; gap:8px; margin-bottom:12px; }
+  .filter-bar input, .filter-bar select { padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; }
+  .progress { display:flex; height:6px; background:var(--bg); border-radius:3px; overflow:hidden; min-width:80px; }
+  .progress > div { height:100%; }
+  .progress .ok { background:var(--green); }
+  .progress .fail { background:var(--red); }
+  canvas { max-height:300px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>OTP Admin Dashboard</h1>
+  <div class="actions">
+    <a href="/docs" target="_blank">📖 API Docs</a>
+    <button id="syncBtn">🔄 Sync Now</button>
+    <button id="logoutBtn">Logout</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="active" data-tab="overview">Overview</button>
+  <button data-tab="stats">Statistics</button>
+  <button data-tab="apikeys">API Keys</button>
+  <button data-tab="orders">Orders</button>
+</nav>
+
+<main>
+  <!-- OVERVIEW -->
+  <section id="tab-overview">
+    <div class="stats">
+      <div class="stat accent"><div class="label">Saldo JasaOTP</div><div class="value" id="stat-saldo">—</div></div>
+      <div class="stat"><div class="label">Total Order</div><div class="value" id="stat-orders">—</div></div>
+      <div class="stat green"><div class="label">OTP Berhasil</div><div class="value" id="stat-received">—</div><div class="sub" id="stat-success-rate"></div></div>
+      <div class="stat orange"><div class="label">Pending</div><div class="value" id="stat-pending">—</div></div>
+      <div class="stat"><div class="label">API Keys Aktif</div><div class="value" id="stat-keys">—</div></div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="label">24 Jam Terakhir</div><div class="value" id="stat-today">—</div><div class="sub" id="stat-today-rate"></div></div>
+      <div class="stat"><div class="label">7 Hari Terakhir</div><div class="value" id="stat-week">—</div><div class="sub" id="stat-week-rate"></div></div>
+      <div class="stat"><div class="label">30 Hari Terakhir</div><div class="value" id="stat-month">—</div><div class="sub" id="stat-month-rate"></div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Order 14 Hari Terakhir</h2>
+      <canvas id="overviewChart"></canvas>
+    </div>
+
+    <div class="panel">
+      <h2>Sync Log Terbaru</h2>
+      <table>
+        <thead><tr><th>Waktu</th><th>Jenis</th><th>Status</th><th>Pesan</th></tr></thead>
+        <tbody id="syncLogBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section id="tab-stats" class="hidden">
+    <div class="stats">
+      <div class="stat green"><div class="label">Order Berhasil (OTP Diterima)</div><div class="value" id="s-received">—</div></div>
+      <div class="stat orange"><div class="label">Pending</div><div class="value" id="s-pending">—</div></div>
+      <div class="stat"><div class="label">Cancelled</div><div class="value" id="s-cancelled">—</div></div>
+      <div class="stat"><div class="label">Timeout</div><div class="value" id="s-timeout">—</div></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Distribusi Status</h2>
+        <canvas id="statusChart"></canvas>
+      </div>
+      <div class="panel">
+        <h2>Trend Order Harian</h2>
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>Top Layanan</h2>
+        <table>
+          <thead><tr><th>Layanan</th><th class="right">Total</th><th class="right">Berhasil</th><th>Rate</th></tr></thead>
+          <tbody id="topLayananBody"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>Top Negara</h2>
+        <table>
+          <thead><tr><th>Negara</th><th class="right">Total</th><th class="right">Berhasil</th><th>Rate</th></tr></thead>
+          <tbody id="topNegaraBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Statistik per API Key</h2>
+      <table>
+        <thead><tr><th>Nama</th><th class="right">Total</th><th class="right">Berhasil</th><th class="right">Pending</th><th class="right">Cancelled</th><th class="right">Timeout</th><th>Success Rate</th></tr></thead>
+        <tbody id="keyStatsBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- API KEYS -->
+  <section id="tab-apikeys" class="hidden">
+    <div class="panel">
+      <h2>
+        API Keys
+        <button class="btn" id="newKeyBtn">+ Buat API Key</button>
+      </h2>
+      <table>
+        <thead><tr><th>Nama</th><th>Key</th><th>Status</th><th>Dibuat</th><th>Terakhir Dipakai</th><th></th></tr></thead>
+        <tbody id="keysBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ORDERS -->
+  <section id="tab-orders" class="hidden">
+    <div class="panel">
+      <h2>Daftar Order</h2>
+      <div class="filter-bar">
+        <select id="filterStatus">
+          <option value="">Semua Status</option>
+          <option value="pending">Pending</option>
+          <option value="received">Received (OTP Masuk)</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="timeout">Timeout</option>
+        </select>
+        <button class="btn secondary small" id="refreshOrdersBtn">Refresh</button>
+      </div>
+      <table>
+        <thead><tr><th>Order ID</th><th>Upstream</th><th>Number</th><th>Layanan</th><th>OTP</th><th>Status</th><th>Dibuat</th><th></th></tr></thead>
+        <tbody id="ordersBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<!-- Modal: Create API Key -->
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3>Buat API Key Baru</h3>
+    <p style="color:var(--muted); font-size:13px; margin:0 0 12px;">Beri nama untuk mengingat API key ini dipakai oleh siapa.</p>
+    <input type="text" id="keyName" placeholder="contoh: Web Order Production" />
+    <div id="newKeyResult" class="hidden">
+      <p style="color:var(--orange); font-size:13px; margin-top:16px;">⚠️ Simpan key ini sekarang.</p>
+      <div class="key-display" id="newKeyValue"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="cancelKeyBtn">Tutup</button>
+      <button class="btn" id="confirmKeyBtn">Buat</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const fmtDate = (ts) => ts ? new Date(ts).toLocaleString('id-ID') : '—';
+const fmtRupiah = (n) => 'Rp ' + (n || 0).toLocaleString('id-ID');
+const rate = (received, total) => total > 0 ? Math.round((received / total) * 100) : 0;
+
+let overviewChart, statusChart, trendChart;
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers||{}) } });
+  if (res.status === 401) { window.location.href = '/admin/login'; return; }
+  return res.json();
+}
+
+// === Tabs ===
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('nav.tabs button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('main section').forEach(s => s.classList.add('hidden'));
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+    if (btn.dataset.tab === 'apikeys') loadApiKeys();
+    if (btn.dataset.tab === 'orders') loadOrders();
+    if (btn.dataset.tab === 'overview') loadOverview();
+    if (btn.dataset.tab === 'stats') loadStats();
+  });
+});
+
+// === Overview ===
+async function loadOverview() {
+  const data = await api('/admin/api/stats');
+  if (!data) return;
+  document.getElementById('stat-saldo').textContent = fmtRupiah(data.saldo);
+  document.getElementById('stat-orders').textContent = data.total_orders;
+  document.getElementById('stat-received').textContent = data.by_status.received;
+  document.getElementById('stat-success-rate').textContent = `Success rate ${data.success_rate}%`;
+  document.getElementById('stat-pending').textContent = data.by_status.pending;
+  document.getElementById('stat-keys').textContent = data.active_keys;
+
+  document.getElementById('stat-today').textContent = data.today.received + ' / ' + data.today.total;
+  document.getElementById('stat-today-rate').textContent = `${rate(data.today.received, data.today.total)}% berhasil`;
+  document.getElementById('stat-week').textContent = data.week.received + ' / ' + data.week.total;
+  document.getElementById('stat-week-rate').textContent = `${rate(data.week.received, data.week.total)}% berhasil`;
+  document.getElementById('stat-month').textContent = data.month.received + ' / ' + data.month.total;
+  document.getElementById('stat-month-rate').textContent = `${rate(data.month.received, data.month.total)}% berhasil`;
+
+  // Chart
+  const labels = data.chart.map(d => d.date.slice(5));
+  const received = data.chart.map(d => d.received);
+  const failed = data.chart.map(d => d.failed);
+  if (overviewChart) overviewChart.destroy();
+  overviewChart = new Chart(document.getElementById('overviewChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Berhasil (OTP Diterima)', data: received, backgroundColor: '#10b981' },
+        { label: 'Gagal/Lainnya', data: failed, backgroundColor: '#ef4444' },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#e2e8f0' } } },
+      scales: {
+        x: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+        y: { stacked: true, ticks: { color: '#94a3b8' }, grid: { color: '#334155' }, beginAtZero: true }
+      }
+    }
+  });
+
+  const body = document.getElementById('syncLogBody');
+  body.innerHTML = '';
+  if (!data.sync_log || data.sync_log.length === 0) {
+    body.innerHTML = '<tr><td colspan="4" class="empty">Belum ada log</td></tr>';
+  } else {
+    for (const log of data.sync_log) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${fmtDate(log.created_at)}</td><td>${log.jenis}</td><td>${log.sukses ? '<span class="badge received">OK</span>' : '<span class="badge timeout">FAIL</span>'}</td><td>${escapeHtml(log.pesan || '')}</td>`;
+      body.appendChild(tr);
+    }
+  }
+}
+
+// === Statistics ===
+async function loadStats() {
+  const data = await api('/admin/api/stats');
+  if (!data) return;
+  const keyStats = await api('/admin/api/keys/stats');
+
+  document.getElementById('s-received').textContent = data.by_status.received;
+  document.getElementById('s-pending').textContent = data.by_status.pending;
+  document.getElementById('s-cancelled').textContent = data.by_status.cancelled;
+  document.getElementById('s-timeout').textContent = data.by_status.timeout;
+
+  // Status pie
+  if (statusChart) statusChart.destroy();
+  statusChart = new Chart(document.getElementById('statusChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Berhasil', 'Pending', 'Cancelled', 'Timeout'],
+      datasets: [{
+        data: [data.by_status.received, data.by_status.pending, data.by_status.cancelled, data.by_status.timeout],
+        backgroundColor: ['#10b981', '#f59e0b', '#94a3b8', '#ef4444'],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { color: '#e2e8f0' } } }
+    }
+  });
+
+  // Trend line
+  const labels = data.chart.map(d => d.date.slice(5));
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Total Order', data: data.chart.map(d => d.total), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', tension: 0.3, fill: true },
+        { label: 'Berhasil', data: data.chart.map(d => d.received), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', tension: 0.3, fill: true },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#e2e8f0' } } },
+      scales: {
+        x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+        y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' }, beginAtZero: true }
+      }
+    }
+  });
+
+  // Top layanan
+  const lb = document.getElementById('topLayananBody');
+  lb.innerHTML = '';
+  if (!data.top_layanan.length) lb.innerHTML = '<tr><td colspan="4" class="empty">Belum ada data</td></tr>';
+  for (const r of data.top_layanan) {
+    const r_ = rate(r.received, r.total);
+    lb.innerHTML += `<tr><td>${escapeHtml(r.layanan)}</td><td class="right">${r.total}</td><td class="right">${r.received}</td><td>${progressBar(r.received, r.total - r.received)} <span style="color:var(--muted); font-size:12px;">${r_}%</span></td></tr>`;
+  }
+
+  // Top negara
+  const nb = document.getElementById('topNegaraBody');
+  nb.innerHTML = '';
+  if (!data.top_negara.length) nb.innerHTML = '<tr><td colspan="4" class="empty">Belum ada data</td></tr>';
+  for (const r of data.top_negara) {
+    const r_ = rate(r.received, r.total);
+    nb.innerHTML += `<tr><td>${escapeHtml(r.nama_negara)} <span style="color:var(--muted); font-size:11px;">(${r.id_negara})</span></td><td class="right">${r.total}</td><td class="right">${r.received}</td><td>${progressBar(r.received, r.total - r.received)} <span style="color:var(--muted); font-size:12px;">${r_}%</span></td></tr>`;
+  }
+
+  // Per API key
+  const kb = document.getElementById('keyStatsBody');
+  kb.innerHTML = '';
+  if (!keyStats || !keyStats.length) {
+    kb.innerHTML = '<tr><td colspan="7" class="empty">Belum ada API key</td></tr>';
+  } else {
+    for (const k of keyStats) {
+      const r_ = rate(k.received, k.total_orders);
+      kb.innerHTML += `<tr>
+        <td>${escapeHtml(k.name)} ${k.active ? '' : '<span class="badge inactive">nonaktif</span>'}</td>
+        <td class="right">${k.total_orders}</td>
+        <td class="right" style="color:#34d399;">${k.received}</td>
+        <td class="right" style="color:#fbbf24;">${k.pending}</td>
+        <td class="right">${k.cancelled}</td>
+        <td class="right" style="color:#fca5a5;">${k.timeout_count}</td>
+        <td>${progressBar(k.received, k.total_orders - k.received)} <span style="color:var(--muted); font-size:12px;">${r_}%</span></td>
+      </tr>`;
+    }
+  }
+}
+
+function progressBar(ok, fail) {
+  const total = ok + fail;
+  if (total === 0) return '<div class="progress"><div class="ok" style="width:0%"></div></div>';
+  const okPct = (ok / total) * 100;
+  return `<div class="progress"><div class="ok" style="width:${okPct}%"></div><div class="fail" style="width:${100 - okPct}%"></div></div>`;
+}
+
+// === API Keys ===
+async function loadApiKeys() {
+  const data = await api('/admin/api/keys');
+  if (!data) return;
+  const body = document.getElementById('keysBody');
+  body.innerHTML = '';
+  if (data.length === 0) {
+    body.innerHTML = '<tr><td colspan="6" class="empty">Belum ada API key</td></tr>';
+    return;
+  }
+  for (const k of data) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(k.name)}</td>
+      <td class="mono">${k.key.substring(0, 12)}...${k.key.substring(k.key.length - 6)} <button class="btn small secondary" onclick="copyKey('${k.key}')">copy</button></td>
+      <td><span class="badge ${k.active ? 'active' : 'inactive'}">${k.active ? 'aktif' : 'nonaktif'}</span></td>
+      <td>${fmtDate(k.created_at)}</td>
+      <td>${fmtDate(k.last_used_at)}</td>
+      <td>
+        ${k.active ? `<button class="btn small secondary" onclick="toggleKey(${k.id}, false)">Nonaktifkan</button>` : `<button class="btn small" onclick="toggleKey(${k.id}, true)">Aktifkan</button>`}
+        <button class="btn small danger" onclick="deleteKey(${k.id})">Hapus</button>
+      </td>`;
+    body.appendChild(tr);
+  }
+}
+
+function copyKey(key) {
+  navigator.clipboard.writeText(key);
+  alert('API key disalin!');
+}
+
+async function toggleKey(id, active) {
+  await api('/admin/api/keys/' + id, { method: 'PATCH', body: JSON.stringify({ active }) });
+  loadApiKeys();
+}
+
+async function deleteKey(id) {
+  if (!confirm('Hapus API key ini? Aksi ini tidak bisa dibatalkan.')) return;
+  await api('/admin/api/keys/' + id, { method: 'DELETE' });
+  loadApiKeys();
+}
+
+document.getElementById('newKeyBtn').addEventListener('click', () => {
+  document.getElementById('keyName').value = '';
+  document.getElementById('newKeyResult').classList.add('hidden');
+  document.getElementById('confirmKeyBtn').classList.remove('hidden');
+  document.getElementById('modalBg').classList.add('show');
+});
+
+document.getElementById('cancelKeyBtn').addEventListener('click', () => {
+  document.getElementById('modalBg').classList.remove('show');
+  loadApiKeys();
+});
+
+document.getElementById('confirmKeyBtn').addEventListener('click', async () => {
+  const name = document.getElementById('keyName').value.trim();
+  if (!name) return alert('Nama wajib diisi');
+  const data = await api('/admin/api/keys', { method: 'POST', body: JSON.stringify({ name }) });
+  if (data && data.success) {
+    document.getElementById('newKeyValue').textContent = data.data.key;
+    document.getElementById('newKeyResult').classList.remove('hidden');
+    document.getElementById('confirmKeyBtn').classList.add('hidden');
+  }
+});
+
+// === Orders ===
+async function loadOrders() {
+  const status = document.getElementById('filterStatus').value;
+  const url = '/admin/api/orders' + (status ? '?status=' + status : '');
+  const data = await api(url);
+  if (!data) return;
+  const body = document.getElementById('ordersBody');
+  body.innerHTML = '';
+  if (data.length === 0) {
+    body.innerHTML = '<tr><td colspan="8" class="empty">Belum ada order</td></tr>';
+    return;
+  }
+  for (const o of data) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="mono">${o.public_id}</td>
+      <td class="mono">${o.upstream_id}</td>
+      <td class="mono">${o.number || '—'}</td>
+      <td>${escapeHtml(o.layanan)}/${escapeHtml(o.operator)}</td>
+      <td class="mono">${o.otp || '—'}</td>
+      <td><span class="badge ${o.status}">${o.status}</span></td>
+      <td>${fmtDate(o.created_at)}</td>
+      <td>${o.status === 'pending' ? `<button class="btn small danger" onclick="cancelOrder('${o.public_id}')">Cancel</button>` : ''}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+async function cancelOrder(id) {
+  if (!confirm('Cancel order ' + id + '?')) return;
+  await api('/admin/api/orders/' + id + '/cancel', { method: 'POST' });
+  loadOrders();
+}
+
+document.getElementById('refreshOrdersBtn').addEventListener('click', loadOrders);
+document.getElementById('filterStatus').addEventListener('change', loadOrders);
+
+// === Header actions ===
+document.getElementById('syncBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('syncBtn');
+  btn.textContent = '⏳ Syncing...';
+  btn.disabled = true;
+  await api('/admin/api/sync', { method: 'POST' });
+  btn.textContent = '🔄 Sync Now';
+  btn.disabled = false;
+  loadOverview();
+});
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await api('/admin/api/logout', { method: 'POST' });
+  window.location.href = '/admin/login';
+});
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// Initial
+loadOverview();
+setInterval(() => {
+  const activeTab = document.querySelector('nav.tabs button.active').dataset.tab;
+  if (activeTab === 'overview') loadOverview();
+  if (activeTab === 'orders') loadOrders();
+  if (activeTab === 'stats') loadStats();
+}, 15000);
+</script>
+</body>
+</html>
