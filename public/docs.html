@@ -107,7 +107,7 @@
       <li>Kalau gak masuk, <code>/v1/cancel</code> untuk refund</li>
     </ol>
     <div class="alert tip">
-      💡 Setelah <code>/v1/order</code> dipanggil, server <strong>otomatis polling</strong> ke upstream tiap beberapa detik untuk waktu maksimal 5 menit. Anda cukup tunggu lewat SSE atau poll endpoint <code>/v1/sms</code> dengan jeda 3-5 detik. OTP yang sudah masuk juga disimpan di database, jadi tidak akan hilang walau koneksi sempat putus.
+      💡 Setelah <code>/v1/order</code> dipanggil, server <strong>otomatis polling</strong> ke upstream tiap beberapa detik untuk waktu maksimal 18 menit. Anda cukup tunggu lewat SSE atau poll endpoint <code>/v1/sms</code> dengan jeda 3-5 detik. OTP yang sudah masuk juga disimpan di database, jadi tidak akan hilang walau koneksi sempat putus.
     </div>
 
     <!-- DATA ENDPOINTS -->
@@ -217,10 +217,16 @@
     <p><strong>Saat OTP belum masuk (HTTP 202):</strong></p>
 <pre><code>{
   "code": 202,
-  "success": false,
+  "success": true,
   "message": "OTP belum diterima, masih menunggu",
-  "data": { "status": "pending" }
+  "data": {
+    "status": "pending",
+    "otp": null
+  }
 }</code></pre>
+    <div class="alert info">
+      <strong>HTTP 202 = Accepted, masih dalam proses</strong>. Bedakan dengan <code>200</code> (OTP sudah masuk) dan <code>400/401/403/404</code> (error). Kalau <code>code === 202</code>, polling lagi setelah jeda.
+    </div>
     <div class="alert warn">
       Jika polling, jeda minimal <strong>3 detik</strong> antar request untuk menghindari beban berlebih. Atau gunakan SSE di bawah.
     </div>
@@ -250,7 +256,7 @@ es.addEventListener('otp', e =&gt; {
 
 es.addEventListener('timeout', e =&gt; {
   // { type: "timeout", public_id: "5849273011" }
-  console.log('Order timeout, OTP tidak masuk dalam 5 menit');
+  console.log('Order timeout, OTP tidak masuk dalam 18 menit');
   es.close();
 });</code></pre>
     <p><strong>Event yang dikirim:</strong></p>
@@ -258,7 +264,7 @@ es.addEventListener('timeout', e =&gt; {
       <tr><th>Event</th><th>Kapan</th><th>Payload</th></tr>
       <tr><td><code>connected</code></td><td>Saat koneksi dibuka</td><td><code>{ order_id, status }</code></td></tr>
       <tr><td><code>otp</code></td><td>Saat OTP berhasil diterima (langsung tutup koneksi)</td><td><code>{ type, public_id, otp }</code></td></tr>
-      <tr><td><code>timeout</code></td><td>Setelah 5 menit OTP belum masuk</td><td><code>{ type, public_id }</code></td></tr>
+      <tr><td><code>timeout</code></td><td>Setelah 18 menit OTP belum masuk</td><td><code>{ type, public_id }</code></td></tr>
     </table>
     <p>Server juga mengirim heartbeat berupa comment (<code>: heartbeat</code>) tiap 15 detik untuk menjaga koneksi tetap hidup di balik proxy/CDN.</p>
 
@@ -335,7 +341,7 @@ es.addEventListener('timeout', e =&gt; {
       <tr><td><code>pending</code></td><td>Sedang menunggu OTP masuk (server masih polling ke upstream)</td></tr>
       <tr><td><code>received</code></td><td>OTP berhasil diterima dan tersimpan di field <code>otp</code></td></tr>
       <tr><td><code>cancelled</code></td><td>Dibatalkan manual lewat /v1/cancel</td></tr>
-      <tr><td><code>timeout</code></td><td>OTP tidak masuk dalam 5 menit, server berhenti polling</td></tr>
+      <tr><td><code>timeout</code></td><td>OTP tidak masuk dalam 18 menit, server berhenti polling</td></tr>
     </table>
 
     <h3 id="errors">HTTP Status Codes</h3>

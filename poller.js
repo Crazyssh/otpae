@@ -9,7 +9,7 @@ emitter.setMaxListeners(0); // unlimited subscribers
 const activePollers = new Map(); // public_id -> intervalId
 
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000');
-const POLL_TIMEOUT_MS = parseInt(process.env.POLL_TIMEOUT_MS || '300000'); // 5 menit
+const POLL_TIMEOUT_MS = parseInt(process.env.POLL_TIMEOUT_MS || '1080000'); // 18 menit
 
 /**
  * Mulai polling OTP ke JasaOTP buat order tertentu.

@@ -399,9 +399,9 @@ v1.get('/sms', async (req, res) => {
       return res.json({ code: 200, success: true, message: 'Berhasil mengambil OTP.', data: { otp: otpClean } });
     }
     return res.status(202).json({
-      code: 202, success: false,
+      code: 202, success: true,
       message: result?.message || 'OTP belum diterima, masih menunggu',
-      data: { status: order.status },
+      data: { status: order.status, otp: null },
     });
   } catch (err) {
     res.status(500).json({ code: 500, success: false, message: err.message });
