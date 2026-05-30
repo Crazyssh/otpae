@@ -28,7 +28,7 @@ function getJasaOtpKey() {
 }
 
 function getJasaOtpBaseUrl() {
-  return get('jasaotp_base_url', process.env.JASAOTP_BASE_URL || 'https://api.jasaotp.id/v1');
+  return get('jasaotp_base_url', process.env.JASAOTP_BASE_URL || 'https://api.ditznesia.com/v1');
 }
 
 module.exports = { get, set, clearCache, getJasaOtpKey, getJasaOtpBaseUrl };
